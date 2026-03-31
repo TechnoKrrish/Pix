@@ -16,23 +16,32 @@ export default function App() {
         for (const font of fonts) {
           let fontUrl: string | null = null;
           try {
+            let fontFace: FontFace | null = null;
+
             if (font.data instanceof Blob) {
-              fontUrl = URL.createObjectURL(font.data);
+              // Try ArrayBuffer first (most reliable for binary data)
+              try {
+                const buffer = await font.data.arrayBuffer();
+                fontFace = new FontFace(font.name, buffer);
+                document.fonts.add(fontFace);
+                await fontFace.load();
+              } catch (e) {
+                console.warn(`Startup: ArrayBuffer failed for ${font.name}, trying Blob URL...`, e);
+                // Fallback to Blob URL
+                fontUrl = URL.createObjectURL(font.data);
+                fontFace = new FontFace(font.name, `url(${fontUrl})`);
+                document.fonts.add(fontFace);
+                await fontFace.load();
+              }
             } else if (typeof (font as any).dataUrl === 'string') {
               // Backward compatibility for old dataUrl format
               fontUrl = (font as any).dataUrl;
-            } else {
-              continue;
+              fontFace = new FontFace(font.name, `url(${fontUrl})`);
+              document.fonts.add(fontFace);
+              await fontFace.load();
             }
-
-            const fontFace = new FontFace(font.name, `url(${fontUrl})`);
-            await fontFace.load();
-            document.fonts.add(fontFace);
-            
-            // Note: We don't revokeObjectURL here because the font needs the URL to stay active in some browsers
-            // until it's fully rendered. We'll let the browser handle it or revoke it later if needed.
           } catch (err) {
-            console.error(`Failed to load font ${font.name}:`, err);
+            console.error(`Failed to load font ${font.name} on startup:`, err);
             if (fontUrl && fontUrl.startsWith('blob:')) URL.revokeObjectURL(fontUrl);
           }
         }
