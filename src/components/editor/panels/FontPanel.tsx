@@ -29,29 +29,61 @@ export default function FontPanel() {
       const fontBlob = new Blob([arrayBuffer]);
       const fontUrl = URL.createObjectURL(fontBlob);
 
-      // Sanitize font name - make it very simple
-      let fontName = 'custom-' + Math.random().toString(36).substring(2, 9);
+      // Sanitize font name - make it very simple and safe
+      const fontName = 'f-' + Math.random().toString(36).substring(2, 9);
+      const displayName = file.name.split('.')[0];
       
       try {
-        let fontFace: FontFace;
-        
+        let fontFace: FontFace | null = null;
+        let lastError: any = null;
+
+        // Step 1: Try ArrayBuffer (Direct & Modern)
         try {
-          // Attempt 1: Load using ArrayBuffer (Direct)
+          console.log('Attempting Step 1: ArrayBuffer');
           fontFace = new FontFace(fontName, arrayBuffer);
           await fontFace.load();
+          document.fonts.add(fontFace);
+          console.log('Step 1 successful');
         } catch (e) {
-          console.warn('Attempt 1 (ArrayBuffer) failed, trying Attempt 2 (Blob URL)...');
-          // Attempt 2: Load using Blob URL (Fallback)
-          fontFace = new FontFace(fontName, `url(${fontUrl})`);
-          await fontFace.load();
+          lastError = e;
+          console.warn('Step 1 (ArrayBuffer) failed:', e);
+          
+          // Step 2: Try Blob URL
+          try {
+            console.log('Attempting Step 2: Blob URL');
+            fontFace = new FontFace(fontName, `url(${fontUrl})`);
+            await fontFace.load();
+            document.fonts.add(fontFace);
+            console.log('Step 2 successful');
+          } catch (e2) {
+            lastError = e2;
+            console.warn('Step 2 (Blob URL) failed:', e2);
+            
+            // Step 3: Try Data URL (Most compatible)
+            try {
+              console.log('Attempting Step 3: Data URL');
+              const dataUrl = await new Promise<string>((resolve) => {
+                const r = new FileReader();
+                r.onload = () => resolve(r.result as string);
+                r.readAsDataURL(fontBlob);
+              });
+              
+              fontFace = new FontFace(fontName, `url(${dataUrl})`);
+              await fontFace.load();
+              document.fonts.add(fontFace);
+              console.log('Step 3 successful');
+            } catch (e3) {
+              lastError = e3;
+              console.error('Step 3 (Data URL) failed:', e3);
+              throw e3; // Re-throw to be caught by outer catch
+            }
+          }
         }
-
-        document.fonts.add(fontFace);
 
         const newFont = {
           id: uuidv4(),
           name: fontName,
-          displayName: file.name.split('.')[0], // Keep original name for UI
+          displayName: displayName,
           data: fontBlob,
           addedAt: Date.now(),
         };
@@ -60,14 +92,13 @@ export default function FontPanel() {
         const updatedFonts = await getFonts();
         setCustomFonts(updatedFonts);
         
-        // Clean up the temporary URL
         URL.revokeObjectURL(fontUrl);
       } catch (err) {
-        console.error('Font Load Error:', err);
+        console.error('Final Font Load Error:', err);
         URL.revokeObjectURL(fontUrl);
         
         const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-        alert(`Font Compatibility Error: Your browser rejected this font file. \n\nReason: ${errorMessage}\n\nSolution: Please convert this font to .woff2 format using an online "TTF to WOFF2" converter. WOFF2 files are much more compatible with mobile browsers.`);
+        alert(`Font Load Failed: ${errorMessage}\n\nYour mobile browser is rejecting the font data. \n\nThis usually happens if the font file is "Legacy" or has internal errors. \n\nTry this: \n1. Open the site in "Desktop Mode" in your mobile browser.\n2. Try a different Shree Lipi font file.\n3. Use a PC/Laptop to upload.`);
       }
 
       if (fileInputRef.current) fileInputRef.current.value = '';
