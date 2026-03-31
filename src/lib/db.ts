@@ -3,6 +3,7 @@ import { openDB, DBSchema } from 'idb';
 export interface CustomFont {
   id: string;
   name: string;
+  displayName?: string;
   data: Blob;
   addedAt: number;
 }
