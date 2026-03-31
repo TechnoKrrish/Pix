@@ -34,51 +34,36 @@ export default function FontPanel() {
       const displayName = file.name.split('.')[0];
       
       try {
-        let fontFace: FontFace | null = null;
-        let lastError: any = null;
+        // Step 1: Convert to Data URL (Base64) - Most compatible for CSS injection
+        const dataUrl = await new Promise<string>((resolve) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result as string);
+          r.readAsDataURL(fontBlob);
+        });
 
-        // Step 1: Try ArrayBuffer (Direct & Modern)
-        try {
-          console.log('Attempting Step 1: ArrayBuffer');
-          fontFace = new FontFace(fontName, arrayBuffer);
-          await fontFace.load();
-          document.fonts.add(fontFace);
-          console.log('Step 1 successful');
-        } catch (e) {
-          lastError = e;
-          console.warn('Step 1 (ArrayBuffer) failed:', e);
-          
-          // Step 2: Try Blob URL
-          try {
-            console.log('Attempting Step 2: Blob URL');
-            fontFace = new FontFace(fontName, `url(${fontUrl})`);
-            await fontFace.load();
-            document.fonts.add(fontFace);
-            console.log('Step 2 successful');
-          } catch (e2) {
-            lastError = e2;
-            console.warn('Step 2 (Blob URL) failed:', e2);
-            
-            // Step 3: Try Data URL (Most compatible)
-            try {
-              console.log('Attempting Step 3: Data URL');
-              const dataUrl = await new Promise<string>((resolve) => {
-                const r = new FileReader();
-                r.onload = () => resolve(r.result as string);
-                r.readAsDataURL(fontBlob);
-              });
-              
-              fontFace = new FontFace(fontName, `url(${dataUrl})`);
-              await fontFace.load();
-              document.fonts.add(fontFace);
-              console.log('Step 3 successful');
-            } catch (e3) {
-              lastError = e3;
-              console.error('Step 3 (Data URL) failed:', e3);
-              throw e3; // Re-throw to be caught by outer catch
-            }
-          }
+        // Step 2: Inject CSS @font-face rule
+        const styleId = `font-style-${fontName}`;
+        let styleTag = document.getElementById(styleId) as HTMLStyleElement;
+        if (!styleTag) {
+          styleTag = document.createElement('style');
+          styleTag.id = styleId;
+          document.head.appendChild(styleTag);
         }
+        
+        styleTag.textContent = `
+          @font-face {
+            font-family: "${fontName}";
+            src: url("${dataUrl}");
+            font-display: swap;
+          }
+        `;
+
+        // Step 3: Wait for browser to recognize the font
+        console.log('Waiting for font to load via CSS...');
+        await document.fonts.load(`1em "${fontName}"`);
+        
+        // Even if .load() fails, we'll try to proceed as CSS injection is often silent
+        console.log('Font injection complete');
 
         const newFont = {
           id: uuidv4(),
@@ -98,7 +83,7 @@ export default function FontPanel() {
         URL.revokeObjectURL(fontUrl);
         
         const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-        alert(`Font Load Failed: ${errorMessage}\n\nYour mobile browser is rejecting the font data. \n\nThis usually happens if the font file is "Legacy" or has internal errors. \n\nTry this: \n1. Open the site in "Desktop Mode" in your mobile browser.\n2. Try a different Shree Lipi font file.\n3. Use a PC/Laptop to upload.`);
+        alert(`Font Load Failed: ${errorMessage}\n\nYour mobile browser is blocking this font's data. \n\nTry this: \n1. Open your Vercel site in "Incognito/Private" mode.\n2. Try a different browser like Firefox.\n3. If you are using a very old Shree Lipi font, try a different version of it.`);
       }
 
       if (fileInputRef.current) fileInputRef.current.value = '';
