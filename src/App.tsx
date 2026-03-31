@@ -14,35 +14,33 @@ export default function App() {
         const [fonts, projects] = await Promise.all([getFonts(), getProjects()]);
         
         for (const font of fonts) {
-          let fontUrl: string | null = null;
           try {
-            let fontFace: FontFace | null = null;
+            const dataUrl = await new Promise<string>((resolve) => {
+              const r = new FileReader();
+              r.onload = () => resolve(r.result as string);
+              r.readAsDataURL(font.data);
+            });
 
-            if (font.data instanceof Blob) {
-              // Try ArrayBuffer first (most reliable for binary data)
-              try {
-                const buffer = await font.data.arrayBuffer();
-                fontFace = new FontFace(font.name, buffer);
-                document.fonts.add(fontFace);
-                await fontFace.load();
-              } catch (e) {
-                console.warn(`Startup: ArrayBuffer failed for ${font.name}, trying Blob URL...`, e);
-                // Fallback to Blob URL
-                fontUrl = URL.createObjectURL(font.data);
-                fontFace = new FontFace(font.name, `url(${fontUrl})`);
-                document.fonts.add(fontFace);
-                await fontFace.load();
-              }
-            } else if (typeof (font as any).dataUrl === 'string') {
-              // Backward compatibility for old dataUrl format
-              fontUrl = (font as any).dataUrl;
-              fontFace = new FontFace(font.name, `url(${fontUrl})`);
-              document.fonts.add(fontFace);
-              await fontFace.load();
+            const styleId = `font-style-${font.name}`;
+            let styleTag = document.getElementById(styleId) as HTMLStyleElement;
+            if (!styleTag) {
+              styleTag = document.createElement('style');
+              styleTag.id = styleId;
+              document.head.appendChild(styleTag);
             }
+            
+            styleTag.textContent = `
+              @font-face {
+                font-family: "${font.name}";
+                src: url("${dataUrl}");
+                font-display: swap;
+              }
+            `;
+
+            // Silently load
+            document.fonts.load(`1em "${font.name}"`).catch(() => {});
           } catch (err) {
-            console.error(`Failed to load font ${font.name} on startup:`, err);
-            if (fontUrl && fontUrl.startsWith('blob:')) URL.revokeObjectURL(fontUrl);
+            console.error(`Failed to inject font ${font.name} on startup:`, err);
           }
         }
 
