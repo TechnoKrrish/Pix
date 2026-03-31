@@ -38,6 +38,13 @@ export default function EditorScreen() {
         const project = projects.find(p => p.id === currentProjectId);
         if (project) {
           canvas.loadFromJSON(project.canvasData, () => {
+            canvas.getObjects('i-text').forEach(obj => {
+              (obj as fabric.IText).set('editable', false);
+              // Ensure legacy fonts have their unicodeText preserved if missing
+              if (!(obj as any).unicodeText) {
+                (obj as any).set('unicodeText', (obj as fabric.IText).text);
+              }
+            });
             canvas.renderAll();
             saveHistory(canvas);
           });
@@ -89,7 +96,7 @@ export default function EditorScreen() {
 
   const saveHistory = (canvas: fabric.Canvas) => {
     if (!canvas) return;
-    const json = JSON.stringify(canvas.toJSON());
+    const json = JSON.stringify(canvas.toJSON(['unicodeText', 'fontEncoding']));
     setHistory(prev => {
       const newHistory = prev.slice(0, historyIndex + 1);
       newHistory.push(json);
@@ -104,7 +111,10 @@ export default function EditorScreen() {
     if (!canvas || historyIndex <= 0) return;
     const newIndex = historyIndex - 1;
     setHistoryIndex(newIndex);
-    canvas.loadFromJSON(history[newIndex], () => canvas.renderAll());
+    canvas.loadFromJSON(history[newIndex], () => {
+      canvas.getObjects('i-text').forEach(obj => (obj as fabric.IText).set('editable', false));
+      canvas.renderAll();
+    });
   };
 
   const handleRedo = () => {
@@ -112,7 +122,10 @@ export default function EditorScreen() {
     if (!canvas || historyIndex >= history.length - 1) return;
     const newIndex = historyIndex + 1;
     setHistoryIndex(newIndex);
-    canvas.loadFromJSON(history[newIndex], () => canvas.renderAll());
+    canvas.loadFromJSON(history[newIndex], () => {
+      canvas.getObjects('i-text').forEach(obj => (obj as fabric.IText).set('editable', false));
+      canvas.renderAll();
+    });
   };
 
   const handleSave = async () => {
@@ -125,7 +138,7 @@ export default function EditorScreen() {
     const project = {
       id,
       name,
-      canvasData: JSON.stringify(canvas.toJSON()),
+      canvasData: JSON.stringify(canvas.toJSON(['unicodeText', 'fontEncoding'])),
       previewUrl: canvas.toDataURL({ format: 'png', multiplier: 0.5 }),
       lastModified: Date.now(),
     };

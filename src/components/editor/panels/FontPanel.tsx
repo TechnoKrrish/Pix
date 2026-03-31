@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { useAppStore } from '../../../store/useAppStore';
-import { saveFont, getFonts } from '../../../lib/db';
+import { saveFont, getFonts, deleteFont } from '../../../lib/db';
 import { Upload, Trash2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -14,33 +14,86 @@ export default function FontPanel() {
 
     const reader = new FileReader();
     reader.onload = async (event) => {
-      const dataUrl = event.target?.result as string;
-      const fontName = file.name.split('.')[0].replace(/[^a-zA-Z0-9]/g, '');
+      const arrayBuffer = event.target?.result as ArrayBuffer;
+      if (!arrayBuffer) return;
+
+      // Replace spaces with hyphens, remove other non-alphanumeric characters, and ensure it doesn't start with a number
+      let fontName = file.name.split('.')[0]
+        .replace(/\s+/g, '-')
+        .replace(/[^a-zA-Z0-9-]/g, '');
       
-      const newFont = {
-        id: uuidv4(),
-        name: fontName,
-        dataUrl,
-        addedAt: Date.now(),
-      };
+      if (/^\d/.test(fontName)) {
+        fontName = `f-${fontName}`;
+      }
+      
+      if (!fontName) {
+        fontName = `font-${Date.now()}`;
+      }
+      
+      try {
+        const fontFace = new FontFace(fontName, arrayBuffer);
+        await fontFace.load();
+        document.fonts.add(fontFace);
 
-      await saveFont(newFont);
-      const updatedFonts = await getFonts();
-      setCustomFonts(updatedFonts);
+        const newFont = {
+          id: uuidv4(),
+          name: fontName,
+          data: new Blob([arrayBuffer]),
+          addedAt: Date.now(),
+        };
 
-      const fontFace = new FontFace(fontName, `url(${dataUrl})`);
-      await fontFace.load();
-      document.fonts.add(fontFace);
+        await saveFont(newFont);
+        const updatedFonts = await getFonts();
+        setCustomFonts(updatedFonts);
+      } catch (err) {
+        console.error('Failed to load font:', err);
+        alert('Failed to load font. The file might be corrupted or unsupported.');
+      }
 
       if (fileInputRef.current) fileInputRef.current.value = '';
     };
-    reader.readAsDataURL(file);
+    reader.readAsArrayBuffer(file);
   };
 
   const applyFont = (fontName: string) => {
     if (!canvas || !activeObject || activeObject.type !== 'i-text') return;
-    (activeObject as fabric.IText).set('fontFamily', fontName);
-    canvas.renderAll();
+    const textObj = activeObject as any;
+    
+    // Clean and add quotes if fontName has spaces to ensure fabric.js handles it correctly
+    const cleanFontName = fontName.replace(/['"]/g, '');
+    const formattedFontName = cleanFontName.includes(' ') ? `"${cleanFontName}"` : cleanFontName;
+    textObj.set('fontFamily', formattedFontName);
+    
+    import('../../../lib/hindiConverter').then(({ detectFontEncoding, convertToLegacy }) => {
+      const encoding = detectFontEncoding(fontName);
+      textObj.set('fontEncoding', encoding);
+      
+      const currentUnicodeText = textObj.unicodeText || textObj.text;
+      const textToRender = convertToLegacy(currentUnicodeText, encoding);
+      
+      textObj.set('text', textToRender);
+      textObj.dirty = true;
+      
+      if (textObj.initDimensions) {
+        textObj.initDimensions();
+      }
+      canvas.requestRenderAll();
+      
+      // Ensure canvas re-renders after font is fully ready
+      document.fonts.load(`1em "${cleanFontName}"`).then(() => {
+        textObj.dirty = true;
+        canvas.requestRenderAll();
+      }).catch(err => {
+        console.warn('Font load warning:', err);
+        // Fallback render
+        textObj.dirty = true;
+        canvas.requestRenderAll();
+      });
+      
+      // Update the active object in the store to trigger a re-render of the UI
+      useAppStore.setState({ activeObject: null });
+      setTimeout(() => useAppStore.setState({ activeObject: textObj }), 0);
+    });
   };
 
   const defaultFonts = ['sans-serif', 'serif', 'monospace', 'Arial', 'Times New Roman', 'Courier New'];
@@ -64,14 +117,28 @@ export default function FontPanel() {
             <h4 className="text-xs text-zinc-500 uppercase mb-2">My Fonts</h4>
             <div className="grid grid-cols-2 gap-2">
               {customFonts.map(font => (
-                <button 
-                  key={font.id}
-                  onClick={() => applyFont(font.name)}
-                  className="p-3 bg-zinc-800/50 rounded-xl text-left hover:bg-zinc-800 transition-colors"
-                  style={{ fontFamily: font.name }}
-                >
-                  <span className="text-lg text-white">{font.name}</span>
-                </button>
+                <div key={font.id} className="relative group">
+                  <button 
+                    onClick={() => applyFont(font.name)}
+                    className="w-full p-3 bg-zinc-800/50 rounded-xl text-left hover:bg-zinc-800 transition-colors"
+                    style={{ fontFamily: `"${font.name}"` }}
+                  >
+                    <span className="text-lg text-white truncate block pr-6">{font.name}</span>
+                  </button>
+                  <button 
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (confirm(`Delete font "${font.name}"?`)) {
+                        await deleteFont(font.id);
+                        const updatedFonts = await getFonts();
+                        setCustomFonts(updatedFonts);
+                      }
+                    }}
+                    className="absolute top-2 right-2 p-1.5 bg-red-500/10 text-red-400 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/20"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               ))}
             </div>
           </div>
@@ -85,7 +152,7 @@ export default function FontPanel() {
                 key={font}
                 onClick={() => applyFont(font)}
                 className="p-3 bg-zinc-800/50 rounded-xl text-left hover:bg-zinc-800 transition-colors"
-                style={{ fontFamily: font }}
+                style={{ fontFamily: `"${font}"` }}
               >
                 <span className="text-lg text-white">{font}</span>
               </button>

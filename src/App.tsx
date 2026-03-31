@@ -14,9 +14,29 @@ export default function App() {
         const [fonts, projects] = await Promise.all([getFonts(), getProjects()]);
         
         for (const font of fonts) {
-          const fontFace = new FontFace(font.name, `url(${font.dataUrl})`);
-          await fontFace.load();
-          document.fonts.add(fontFace);
+          try {
+            let fontData: ArrayBuffer;
+            if (font.data instanceof Blob) {
+              fontData = await font.data.arrayBuffer();
+            } else if (typeof (font as any).dataUrl === 'string') {
+              // Backward compatibility for old dataUrl format
+              const base64 = (font as any).dataUrl.split(',')[1];
+              const binary = atob(base64);
+              const bytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+              }
+              fontData = bytes.buffer;
+            } else {
+              continue;
+            }
+
+            const fontFace = new FontFace(font.name, fontData);
+            await fontFace.load();
+            document.fonts.add(fontFace);
+          } catch (err) {
+            console.error(`Failed to load font ${font.name}:`, err);
+          }
         }
 
         setCustomFonts(fonts);

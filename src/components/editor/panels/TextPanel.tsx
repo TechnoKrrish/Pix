@@ -16,7 +16,13 @@ export default function TextPanel() {
       fontSize: 40,
       originX: 'center',
       originY: 'center',
+      editable: false,
     });
+    // @ts-ignore
+    text.set('unicodeText', 'New Text');
+    // @ts-ignore
+    text.set('fontEncoding', 'unicode');
+    
     canvas.add(text);
     canvas.setActiveObject(text);
     canvas.renderAll();
@@ -69,11 +75,33 @@ export default function TextPanel() {
           <div className="w-px h-10 bg-zinc-800 mx-2" />
           
           <div className="flex flex-col gap-1 min-w-[150px]">
-            <span className="text-[10px] text-zinc-500 uppercase">Text</span>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-zinc-500 uppercase">Text</span>
+              {(activeObject as any).fontEncoding && (activeObject as any).fontEncoding !== 'unicode' && (
+                <span className="text-[8px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded uppercase">
+                  {(activeObject as any).fontEncoding} Mode
+                </span>
+              )}
+            </div>
             <input 
               type="text" 
-              value={(activeObject as fabric.IText).text || ''} 
-              onChange={(e) => updateProperty('text', e.target.value)}
+              value={(activeObject as any).unicodeText || (activeObject as fabric.IText).text || ''} 
+              onChange={(e) => {
+                const newText = e.target.value;
+                const textObj = activeObject as any;
+                textObj.set('unicodeText', newText);
+                
+                const encoding = textObj.fontEncoding || 'unicode';
+                if (encoding !== 'unicode') {
+                  import('../../../lib/hindiConverter').then(({ convertToLegacy }) => {
+                    textObj.set('text', convertToLegacy(newText, encoding));
+                    textObj.dirty = true;
+                    canvas?.renderAll();
+                  });
+                } else {
+                  updateProperty('text', newText);
+                }
+              }}
               className="bg-zinc-800 text-white px-2 py-1.5 rounded text-sm border border-zinc-700 focus:outline-none focus:border-indigo-500"
             />
           </div>
