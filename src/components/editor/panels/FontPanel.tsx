@@ -29,28 +29,29 @@ export default function FontPanel() {
       const fontBlob = new Blob([arrayBuffer]);
       const fontUrl = URL.createObjectURL(fontBlob);
 
-      // Sanitize font name
-      let fontName = file.name.split('.')[0]
-        .replace(/\s+/g, '-')
-        .replace(/[^a-zA-Z0-9-]/g, '');
-      
-      if (/^\d/.test(fontName)) {
-        fontName = `f-${fontName}`;
-      }
-      
-      if (!fontName) {
-        fontName = `font-${Date.now()}`;
-      }
+      // Sanitize font name - make it very simple
+      let fontName = 'custom-' + Math.random().toString(36).substring(2, 9);
       
       try {
-        // Use the Blob URL instead of ArrayBuffer for better browser compatibility
-        const fontFace = new FontFace(fontName, `url(${fontUrl})`);
-        await fontFace.load();
+        let fontFace: FontFace;
+        
+        try {
+          // Attempt 1: Load using ArrayBuffer (Direct)
+          fontFace = new FontFace(fontName, arrayBuffer);
+          await fontFace.load();
+        } catch (e) {
+          console.warn('Attempt 1 (ArrayBuffer) failed, trying Attempt 2 (Blob URL)...');
+          // Attempt 2: Load using Blob URL (Fallback)
+          fontFace = new FontFace(fontName, `url(${fontUrl})`);
+          await fontFace.load();
+        }
+
         document.fonts.add(fontFace);
 
         const newFont = {
           id: uuidv4(),
           name: fontName,
+          displayName: file.name.split('.')[0], // Keep original name for UI
           data: fontBlob,
           addedAt: Date.now(),
         };
@@ -64,7 +65,9 @@ export default function FontPanel() {
       } catch (err) {
         console.error('Font Load Error:', err);
         URL.revokeObjectURL(fontUrl);
-        alert(`Failed to load font: ${err instanceof Error ? err.message : 'Unknown error'}. This font file might not be compatible with web browsers.`);
+        
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        alert(`Font Compatibility Error: Your browser rejected this font file. \n\nReason: ${errorMessage}\n\nSolution: Please convert this font to .woff2 format using an online "TTF to WOFF2" converter. WOFF2 files are much more compatible with mobile browsers.`);
       }
 
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -140,12 +143,12 @@ export default function FontPanel() {
                     className="w-full p-3 bg-zinc-800/50 rounded-xl text-left hover:bg-zinc-800 transition-colors"
                     style={{ fontFamily: `"${font.name}"` }}
                   >
-                    <span className="text-lg text-white truncate block pr-6">{font.name}</span>
+                    <span className="text-lg text-white truncate block pr-6">{font.displayName || font.name}</span>
                   </button>
                   <button 
                     onClick={async (e) => {
                       e.stopPropagation();
-                      if (confirm(`Delete font "${font.name}"?`)) {
+                      if (confirm(`Delete font "${font.displayName || font.name}"?`)) {
                         await deleteFont(font.id);
                         const updatedFonts = await getFonts();
                         setCustomFonts(updatedFonts);
