@@ -12,12 +12,24 @@ export default function FontPanel() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const allowedExtensions = ['ttf', 'otf', 'woff', 'woff2'];
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    
+    if (!extension || !allowedExtensions.includes(extension)) {
+      alert(`Unsupported file type: .${extension}. Please upload a standard font file (.ttf, .otf, .woff, or .woff2).`);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = async (event) => {
       const arrayBuffer = event.target?.result as ArrayBuffer;
       if (!arrayBuffer) return;
 
-      // Replace spaces with hyphens, remove other non-alphanumeric characters, and ensure it doesn't start with a number
+      const fontBlob = new Blob([arrayBuffer]);
+      const fontUrl = URL.createObjectURL(fontBlob);
+
+      // Sanitize font name
       let fontName = file.name.split('.')[0]
         .replace(/\s+/g, '-')
         .replace(/[^a-zA-Z0-9-]/g, '');
@@ -31,23 +43,28 @@ export default function FontPanel() {
       }
       
       try {
-        const fontFace = new FontFace(fontName, arrayBuffer);
+        // Use the Blob URL instead of ArrayBuffer for better browser compatibility
+        const fontFace = new FontFace(fontName, `url(${fontUrl})`);
         await fontFace.load();
         document.fonts.add(fontFace);
 
         const newFont = {
           id: uuidv4(),
           name: fontName,
-          data: new Blob([arrayBuffer]),
+          data: fontBlob,
           addedAt: Date.now(),
         };
 
         await saveFont(newFont);
         const updatedFonts = await getFonts();
         setCustomFonts(updatedFonts);
+        
+        // Clean up the temporary URL
+        URL.revokeObjectURL(fontUrl);
       } catch (err) {
-        console.error('Failed to load font:', err);
-        alert('Failed to load font. The file might be corrupted or unsupported.');
+        console.error('Font Load Error:', err);
+        URL.revokeObjectURL(fontUrl);
+        alert(`Failed to load font: ${err instanceof Error ? err.message : 'Unknown error'}. This font file might not be compatible with web browsers.`);
       }
 
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -108,7 +125,7 @@ export default function FontPanel() {
         >
           <Upload className="w-4 h-4" /> Upload Font
         </button>
-        <input type="file" ref={fileInputRef} accept=".ttf,.otf,.woff" className="hidden" onChange={handleUpload} />
+        <input type="file" ref={fileInputRef} accept=".ttf,.otf,.woff,.woff2" className="hidden" onChange={handleUpload} />
       </div>
 
       <div className="space-y-4">
