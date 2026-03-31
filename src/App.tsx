@@ -14,28 +14,26 @@ export default function App() {
         const [fonts, projects] = await Promise.all([getFonts(), getProjects()]);
         
         for (const font of fonts) {
+          let fontUrl: string | null = null;
           try {
-            let fontData: ArrayBuffer;
             if (font.data instanceof Blob) {
-              fontData = await font.data.arrayBuffer();
+              fontUrl = URL.createObjectURL(font.data);
             } else if (typeof (font as any).dataUrl === 'string') {
               // Backward compatibility for old dataUrl format
-              const base64 = (font as any).dataUrl.split(',')[1];
-              const binary = atob(base64);
-              const bytes = new Uint8Array(binary.length);
-              for (let i = 0; i < binary.length; i++) {
-                bytes[i] = binary.charCodeAt(i);
-              }
-              fontData = bytes.buffer;
+              fontUrl = (font as any).dataUrl;
             } else {
               continue;
             }
 
-            const fontFace = new FontFace(font.name, fontData);
+            const fontFace = new FontFace(font.name, `url(${fontUrl})`);
             await fontFace.load();
             document.fonts.add(fontFace);
+            
+            // Note: We don't revokeObjectURL here because the font needs the URL to stay active in some browsers
+            // until it's fully rendered. We'll let the browser handle it or revoke it later if needed.
           } catch (err) {
             console.error(`Failed to load font ${font.name}:`, err);
+            if (fontUrl && fontUrl.startsWith('blob:')) URL.revokeObjectURL(fontUrl);
           }
         }
 
